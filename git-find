@@ -1,0 +1,47 @@
+#!/bin/bash
+# usage: git find <pattern>
+#
+# Finds <pattern> in both the file contents _and_ file names of a git
+# repository, outputting the results in a consistent unified format.  File name
+# matches always come last.
+#
+# The pattern should be a valid Perl regular expression (PCRE).
+
+set -e -o pipefail
+
+main() {
+    if [[ $# -eq 0 || -z $1 ]]; then
+        usage
+    else
+        search "$@"
+    fi
+}
+
+usage() {
+    perl -ne '2 .. not s/^# ?// ? print : exit' -- "$0"
+}
+
+search() {
+    export pattern="$1"
+    export color_filename="$(git config --get-color color.grep.filename "bold green")"
+    export color_match="$(git config --get-color color.grep.match "bold red")"
+    export color_reset="$(git config --get-color "" "reset")"
+
+    # Colorize and auto-pager when printing to a terminal
+    if [[ -t 1 ]]; then
+        (
+            # XXX TODO: stop using my "git ack" alias
+            git ack --color "$pattern" || true
+            echo
+            git ls-files -z | perl -ln0e 'next unless s/ ($ENV{pattern}) / $ENV{color_match} . $1 . $ENV{color_filename} /gxei; print $ENV{color_filename}, $_, $ENV{color_reset};'
+        ) | ${PAGER:-less -SRFXi}
+
+    # Output plain text when output is redirected
+    else
+        git ack "$pattern" || true
+        echo
+        git ls-files -z | perl -ln0e 'print if /$ENV{pattern}/'
+    fi
+}
+
+main "$@"
